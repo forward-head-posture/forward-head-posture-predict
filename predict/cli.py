@@ -1,6 +1,6 @@
-import fire
-from predict.app import main
+from predict.app import load_model, main
 
 
 def cli():
-    fire.Fire(main)
+    model = load_model()
+    main(model)
