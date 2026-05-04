@@ -1,41 +1,31 @@
-# pylint: disable=no-member
-
+import numpy as np
 import pytest
-import predict
-from predict.app import main, count_images
+from predict.app import preprocess_frame, main
 
 
-@pytest.mark.skip
-def test_main_with_one_step(mocker):
-    mocker.patch("predict.app.count_images").return_value = 1
-    main(
-        epochs=2,
-        batch_size=1,
-        # model_dir="s3://test/forward-head-posture/keras_ckpt",
-    )
+def test_preprocess_frame_shape():
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    result = preprocess_frame(frame)
+    assert result.shape == (1, 224, 224, 3)
 
 
-@pytest.mark.skip
-def test_count_images():
-    data_dir = "s3://tfrecord/forward-head-posture"
-    train_counts = count_images(data_dir, "**/*train*")
-    print(train_counts)
-    validation_counts = count_images(data_dir, "**/*validation*")
-    print(validation_counts)
+@pytest.mark.parametrize("pixel,expected", [(0, -1.0), (255, 1.0)])
+def test_preprocess_frame_normalization(pixel, expected):
+    frame = np.full((480, 640, 3), pixel, dtype=np.uint8)
+    result = preprocess_frame(frame)
+    assert np.allclose(result, expected)
 
 
-# @pytest.mark.skip
-def test_main_with_mock(mocker):
-    mocker.patch("predict.app.run_keras")
-    num_train_images = 8800
-    num_validation_images = 2222
-    mocker.patch("predict.app.count_images").side_effect = [
-        num_train_images,
-        num_validation_images,
-    ]
-    batch_size = 13
-    main(batch_size=batch_size)
-    kwargs = predict.app.run_keras.call_args[1]
+def test_main_reads_one_frame_and_exits(mocker):
+    mock_model = mocker.MagicMock()
+    mock_model.predict.return_value = np.array([[0.9]])
 
-    assert kwargs["steps_per_epoch"] == num_train_images // batch_size
-    assert kwargs["validation_steps"] == num_validation_images // batch_size
+    mock_cap = mocker.MagicMock()
+    mock_cap.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+    mocker.patch("predict.app.cv2.VideoCapture", return_value=mock_cap)
+    mocker.patch("predict.app.cv2.imshow")
+    mocker.patch("predict.app.cv2.waitKey", return_value=ord("q"))
+
+    main(mock_model)
+
+    mock_model.predict.assert_called_once()
